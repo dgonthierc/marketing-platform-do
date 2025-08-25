@@ -1,0 +1,33 @@
+name: marketing-platform
+services:
+- name: web
+  source_dir: /
+  github:
+    repo: dgonthierc/marketing-platform-do
+    branch: master
+    deploy_on_push: true
+  run_command: npm start
+  build_command: npm run build
+  dockerfile_path: Dockerfile
+  instance_count: 1
+  instance_size_slug: basic-xxs
+  http_port: 3000
+  routes:
+  - path: /
+  envs:
+  - key: NODE_ENV
+    value: production
+  - key: NEXT_PUBLIC_SUPABASE_URL
+    value: https://tbxnymbfkkwsfawotixs.supabase.co
+  - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+    value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRieG55bWJma2t3c2Zhd290aXhzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTYxMTMxNjgsImV4cCI6MjA3MTY4OTE2OH0.PotO_56jRZUNuYK0IGG6L64zsfy_TmnU1fQVmmX33SI
+  - key: SUPABASE_SERVICE_ROLE_KEY
+    value: sbp_a576fef9303973d13a2abc25739541a0edbabb94
+  - key: DATABASE_URL
+    value: postgresql://postgres:v@#5#NeeX4H7q4t@db.tbxnymbfkkwsfawotixs.supabase.co:5432/postgres
+  - key: DIRECT_URL
+    value: postgresql://postgres:v@#5#NeeX4H7q4t@db.tbxnymbfkkwsfawotixs.supabase.co:5432/postgres?pgbouncer=true
+  - key: NEXT_PUBLIC_APP_URL
+    value: https://marketing-platform-${APP_DOMAIN}
+  - key: NEXT_PUBLIC_APP_NAME
+    value: Marketing Platform Pro
