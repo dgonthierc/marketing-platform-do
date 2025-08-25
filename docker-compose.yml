@@ -1,0 +1,125 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: marketing-platform-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: localpassword123
+      POSTGRES_DB: marketing_platform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - marketing-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Next.js Application (Development)
+  app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: marketing-platform-dev
+    restart: unless-stopped
+    environment:
+      # Database
+      DATABASE_URL: postgresql://postgres:localpassword123@postgres:5432/marketing_platform?schema=public
+      DIRECT_URL: postgresql://postgres:localpassword123@postgres:5432/marketing_platform?schema=public
+      
+      # Supabase (usando las credenciales reales para desarrollo)
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      
+      # Stripe (test keys)
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      
+      # SendGrid (cuando lo tengas)
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-not_configured}
+      
+      # App Configuration
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NODE_ENV: development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./prisma:/app/prisma
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - marketing-network
+    command: npm run dev
+
+  # Next.js Application (Production Build)
+  app-prod:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: marketing-platform-prod
+    restart: unless-stopped
+    profiles: ["production"]
+    environment:
+      # Database
+      DATABASE_URL: postgresql://postgres:localpassword123@postgres:5432/marketing_platform?schema=public
+      DIRECT_URL: postgresql://postgres:localpassword123@postgres:5432/marketing_platform?schema=public
+      
+      # Supabase
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY}
+      
+      # Stripe
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      
+      # SendGrid
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-not_configured}
+      
+      # App Configuration
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NODE_ENV: production
+    ports:
+      - "3001:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - marketing-network
+
+  # Adminer for database management
+  adminer:
+    image: adminer:latest
+    container_name: marketing-platform-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    networks:
+      - marketing-network
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  marketing-network:
+    driver: bridge

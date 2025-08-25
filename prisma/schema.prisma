@@ -1,0 +1,484 @@
+// Prisma Schema for Marketing Platform
+// Mobile-First CRM and Quote System
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================
+// CORE BUSINESS MODELS
+// ============================================
+
+// Lead Management - Core of the conversion funnel
+model Lead {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  name      String?
+  company   String?
+  phone     String?
+  source    String     @default("website") // "website", "referral", "google", "facebook", "tiktok"
+  status    LeadStatus @default(NEW)
+  score     Int        @default(0) // 0-100 lead scoring for qualification
+  
+  // Business Information
+  industry  String?
+  budget    String? // "1k-5k", "5k-10k", "10k-20k", "20k+"
+  platforms String[] // ["google", "meta", "tiktok", "linkedin"]
+  message   String? // Initial message from contact form
+  
+  // Marketing Attribution
+  utmSource   String?
+  utmMedium   String?
+  utmCampaign String?
+  utmTerm     String?
+  utmContent  String?
+  referrer    String?
+  
+  // Metadata
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  // Relations
+  quotes       Quote[]
+  interactions LeadInteraction[]
+  notes        LeadNote[]
+  client       Client?
+  
+  @@index([email])
+  @@index([status])
+  @@index([score])
+  @@index([createdAt])
+  @@map("leads")
+}
+
+// Lead Interactions - Track all touchpoints
+model LeadInteraction {
+  id        String           @id @default(cuid())
+  leadId    String
+  type      InteractionType
+  channel   String           @default("website") // "email", "phone", "website", "whatsapp"
+  subject   String?
+  content   String?
+  metadata  Json?            // Store additional data like email opens, link clicks
+  createdAt DateTime         @default(now())
+  
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  @@index([leadId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("lead_interactions")
+}
+
+// Lead Notes - Internal notes for sales team
+model LeadNote {
+  id        String   @id @default(cuid())
+  leadId    String
+  content   String
+  createdBy String   // Admin user ID
+  createdAt DateTime @default(now())
+  
+  lead Lead @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  @@index([leadId])
+  @@map("lead_notes")
+}
+
+// Quote System - Automated pricing and proposals
+model Quote {
+  id         String      @id @default(cuid())
+  leadId     String
+  quoteNumber String     @unique // AUTO-001, AUTO-002, etc.
+  
+  // Service Details
+  services   Json        // {platforms: ["google", "meta"], budget: 5000, duration: 3}
+  
+  // Pricing
+  monthlyFee Decimal     @db.Decimal(10, 2)
+  setupFee   Decimal     @db.Decimal(10, 2) @default(0)
+  totalValue Decimal     @db.Decimal(10, 2) // Total contract value
+  currency   String      @default("USD")
+  
+  // Quote Status
+  status     QuoteStatus @default(DRAFT)
+  validUntil DateTime    @default(dbgenerated("(now() + interval '30 days')"))
+  
+  // Tracking
+  sentAt     DateTime?
+  viewedAt   DateTime?
+  acceptedAt DateTime?
+  rejectedAt DateTime?
+  
+  // Optional customization
+  customTerms String?
+  notes       String?
+  
+  // Metadata
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  // Relations
+  lead    Lead      @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  project Project?
+  
+  @@index([leadId])
+  @@index([status])
+  @@index([quoteNumber])
+  @@index([createdAt])
+  @@map("quotes")
+}
+
+// Client Management - Converted leads
+model Client {
+  id           String       @id @default(cuid())
+  leadId       String?      @unique
+  
+  // Contact Information
+  name         String
+  email        String       @unique
+  company      String?
+  phone        String?
+  
+  // Business Information
+  industry     String?
+  website      String?
+  
+  // Client Status
+  status       ClientStatus @default(ACTIVE)
+  tier         ClientTier   @default(STANDARD) // For pricing/service differentiation
+  
+  // Important Dates
+  startDate    DateTime     @default(now())
+  endDate      DateTime?
+  
+  // Billing Information
+  billingEmail String?
+  billingAddress Json?     // {street, city, state, zip, country}
+  taxId        String?
+  
+  // Metadata
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  
+  // Relations
+  lead         Lead?        @relation(fields: [leadId], references: [id])
+  projects     Project[]
+  payments     Payment[]
+  reports      Report[]
+  tickets      Ticket[]
+  
+  @@index([email])
+  @@index([status])
+  @@index([tier])
+  @@map("clients")
+}
+
+// Project Management - Active campaigns
+model Project {
+  id          String        @id @default(cuid())
+  clientId    String
+  quoteId     String?       @unique
+  
+  // Project Details
+  name        String
+  description String?
+  
+  // Service Configuration
+  platforms   String[]      // Active platforms
+  budget      Decimal       @db.Decimal(10, 2)
+  
+  // Project Status
+  status      ProjectStatus @default(SETUP)
+  
+  // Important Dates
+  startDate   DateTime      @default(now())
+  endDate     DateTime?
+  
+  // Performance Tracking
+  kpis        Json?         // {targetLeads: 100, targetCPA: 50, targetROAS: 4}
+  
+  // Metadata
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  // Relations
+  client      Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  quote       Quote?        @relation(fields: [quoteId], references: [id])
+  campaigns   Campaign[]
+  
+  @@index([clientId])
+  @@index([status])
+  @@map("projects")
+}
+
+// Campaign Tracking - Individual ad campaigns
+model Campaign {
+  id          String         @id @default(cuid())
+  projectId   String
+  
+  // Campaign Information
+  name        String
+  platform    String         // "google", "meta", "tiktok"
+  type        String         // "search", "display", "video", "shopping"
+  
+  // Performance Metrics (updated daily)
+  impressions Int            @default(0)
+  clicks      Int            @default(0)
+  conversions Int            @default(0)
+  spend       Decimal        @db.Decimal(10, 2) @default(0)
+  revenue     Decimal        @db.Decimal(10, 2) @default(0)
+  
+  // Campaign Status
+  status      CampaignStatus @default(ACTIVE)
+  
+  // Metadata
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  
+  // Relations
+  project     Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  
+  @@index([projectId])
+  @@index([platform])
+  @@index([status])
+  @@map("campaigns")
+}
+
+// Payment Tracking
+model Payment {
+  id            String        @id @default(cuid())
+  clientId      String
+  
+  // Payment Details
+  amount        Decimal       @db.Decimal(10, 2)
+  currency      String        @default("USD")
+  type          PaymentType   // "setup", "monthly", "addon"
+  
+  // Payment Status
+  status        PaymentStatus @default(PENDING)
+  
+  // Payment Method
+  method        String?       // "stripe", "paypal", "bank_transfer"
+  transactionId String?
+  
+  // Billing Period (for recurring payments)
+  periodStart   DateTime?
+  periodEnd     DateTime?
+  
+  // Invoice Information
+  invoiceNumber String?       @unique
+  invoiceUrl    String?
+  
+  // Metadata
+  notes         String?
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  // Relations
+  client        Client        @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  @@index([clientId])
+  @@index([status])
+  @@index([invoiceNumber])
+  @@map("payments")
+}
+
+// Report Generation
+model Report {
+  id          String       @id @default(cuid())
+  clientId    String
+  
+  // Report Details
+  type        ReportType   // "weekly", "monthly", "quarterly"
+  periodStart DateTime
+  periodEnd   DateTime
+  
+  // Report Data
+  metrics     Json         // Performance metrics snapshot
+  insights    String?      // AI-generated insights
+  
+  // Report Files
+  pdfUrl      String?
+  
+  // Metadata
+  generatedAt DateTime     @default(now())
+  sentAt      DateTime?
+  viewedAt    DateTime?
+  
+  // Relations
+  client      Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  @@index([clientId])
+  @@index([type])
+  @@index([periodStart])
+  @@map("reports")
+}
+
+// Support Tickets
+model Ticket {
+  id          String       @id @default(cuid())
+  clientId    String
+  
+  // Ticket Details
+  subject     String
+  description String
+  priority    Priority     @default(MEDIUM)
+  status      TicketStatus @default(OPEN)
+  category    String?      // "technical", "billing", "campaign", "other"
+  
+  // Resolution
+  resolution  String?
+  resolvedAt  DateTime?
+  resolvedBy  String?      // Admin user ID
+  
+  // Metadata
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  // Relations
+  client      Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  messages    TicketMessage[]
+  
+  @@index([clientId])
+  @@index([status])
+  @@index([priority])
+  @@map("tickets")
+}
+
+// Ticket Messages
+model TicketMessage {
+  id        String   @id @default(cuid())
+  ticketId  String
+  
+  // Message Details
+  content   String
+  isStaff   Boolean  @default(false)
+  authorId  String   // Client ID or Admin ID
+  
+  // Attachments
+  attachments Json?  // [{name, url, type}]
+  
+  // Metadata
+  createdAt DateTime @default(now())
+  
+  // Relations
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  
+  @@index([ticketId])
+  @@map("ticket_messages")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  QUOTED
+  NEGOTIATING
+  CONVERTED
+  LOST
+  UNQUALIFIED
+}
+
+enum InteractionType {
+  EMAIL_SENT
+  EMAIL_OPENED
+  EMAIL_CLICKED
+  PHONE_CALL
+  MEETING
+  FORM_SUBMISSION
+  QUOTE_SENT
+  QUOTE_VIEWED
+  WEBSITE_VISIT
+  CHAT_MESSAGE
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  VIEWED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  REVISED
+}
+
+enum ClientStatus {
+  ACTIVE
+  PAUSED
+  CHURNED
+  SUSPENDED
+}
+
+enum ClientTier {
+  STARTER
+  STANDARD
+  PREMIUM
+  ENTERPRISE
+}
+
+enum ProjectStatus {
+  SETUP
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum PaymentType {
+  SETUP_FEE
+  MONTHLY_FEE
+  ADDON
+  REFUND
+  CREDIT
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+enum ReportType {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+  CUSTOM
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  WAITING_RESPONSE
+  RESOLVED
+  CLOSED
+}
